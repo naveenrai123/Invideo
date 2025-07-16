@@ -1,0 +1,8 @@
+streamlit
+pandas
+scikit-learn
+matplotlib
+joblib
+transformers
+torch
+google-api-python-client
