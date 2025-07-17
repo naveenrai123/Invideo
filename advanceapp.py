@@ -48,7 +48,7 @@ def get_youtube_comments(api_key, video_id, max_results=100):
         comments.append(comment)
     return comments
 
-def compare_sentiments(comments):
+"""def compare_sentiments(comments):
     results = []
     for comment in comments:
         clean = clean_text(comment)
@@ -62,6 +62,35 @@ def compare_sentiments(comments):
             "Custom Model": custom_label,
             "HF Model": hf_label
         })
+    return pd.DataFrame(results)
+"""
+def compare_sentiments(comments):
+    results = []
+    for comment in comments:
+        try:
+            clean = clean_text(comment)
+            vector = vectorizer.transform([clean])
+            custom_pred = model.predict(vector)[0]
+            custom_label = 'Positive' if custom_pred == 1 else 'Negative'
+
+            # Hugging Face inference
+            hf_output = hf_pipeline(comment[:512])[0]
+            hf_label_raw = hf_output['label']
+            hf_label = 'Positive' if 'POS' in hf_label_raw.upper() else 'Negative'
+
+            results.append({
+                "Comment": comment,
+                "Custom Model": custom_label,
+                "HF Model": hf_label
+            })
+        except Exception as e:
+            # Catch inference errors without crashing the whole app
+            results.append({
+                "Comment": comment,
+                "Custom Model": "Error",
+                "HF Model": f"Error: {str(e)}"
+            })
+
     return pd.DataFrame(results)
 
 def plot_top_tfidf_words(vectorizer, model, top_n=20):
