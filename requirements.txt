@@ -1,8 +1,8 @@
 streamlit
 pandas
-scikit-learn
+scikit-learn==1.4.2
 matplotlib
 joblib
-transformers
-torch
+transformers==4.41.1
+torch==2.3.0
 google-api-python-client 
