@@ -1,5 +1,5 @@
 
-"""import streamlit as st
+import streamlit as st
 from googleapiclient.discovery import build
 import joblib
 import pandas as pd
@@ -174,8 +174,8 @@ with tab4:
             st.dataframe(df_upload[['review', 'Sentiment']])
         else:
             st.error("CSV must have a 'review' column.")
-    """
-import streamlit as st
+
+"""import streamlit as st
 from googleapiclient.discovery import build
 import joblib
 import pandas as pd
@@ -361,4 +361,4 @@ with tab4:
                 st.error("CSV must have a column named 'review'.")
         except Exception as e:
             st.error(f"Error reading file: {e}")
-
+"""
