@@ -1,7 +1,9 @@
 streamlit
+google-api-python-client
+joblib
 pandas
-scikit-learn
 matplotlib
+numpy
+scikit-learn
 transformers
 torch
-google-api-python-client
