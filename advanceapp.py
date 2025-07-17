@@ -12,8 +12,8 @@ from transformers import pipeline
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
-
+#hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
+hf_pipeline = pipeline("sentiment-analysis", device=-1)  # Force CPU
 # ------------------- Utility Functions ------------------- #
 
 def clean_text(text):
