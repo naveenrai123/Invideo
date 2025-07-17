@@ -12,7 +12,9 @@ from transformers import pipeline
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
+# Force use of CPU and prevent float16 loading
+hf_pipeline = pipeline("sentiment-analysis", device=-1)  # -1 = CPU
+#hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
 
 # ------------------- Utility Functions ------------------- #
 
