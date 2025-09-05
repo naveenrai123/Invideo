@@ -5,7 +5,7 @@ pandas
 matplotlib
 numpy
 scikit-learn==1.5.1
-transformers==4.44.2
+transformers
 torch
 youtube-transcript-api==0.6.2
 langchain
