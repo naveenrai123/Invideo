@@ -4,10 +4,10 @@ joblib
 pandas
 matplotlib
 numpy
+scikit-learn
 transformers
 torch
-scikit-learn
 youtube-transcript-api
-langchain==0.2.14
-langchain-community==0.2.12
-langchain-google-genai==1.0.7
+langchain
+langchain-community
+langchain-google-genai
