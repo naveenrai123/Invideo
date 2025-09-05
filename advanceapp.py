@@ -8,13 +8,22 @@ import re
 import numpy as np
 from collections import Counter
 from transformers import pipeline
+from youtube_transcript_api import YouTubeTranscriptApi
+# LangChain imports
+from langchain_community.document_loaders import YoutubeLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains.summarize import load_summarize_chain
+from langchain_google_genai import ChatGoogleGenerativeAI
 
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-#hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
-hf_pipeline = pipeline("sentiment-analysis", device=-1)  # Force CPU
+hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
+
 # ------------------- Utility Functions ------------------- #
+st.set_page_config(page_title="Invideo", layout="wide")
 
 def clean_text(text):
     text = re.sub(r"<.*?>", "", text)
@@ -58,7 +67,6 @@ def compare_sentiments(comments):
         })
     return pd.DataFrame(results)
 
-
 def plot_top_tfidf_words(vectorizer, model, top_n=20):
     feature_names = np.array(vectorizer.get_feature_names_out())
     coefs = model.coef_[0]
@@ -72,32 +80,80 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.markdown("**Top Negative Words**")
         st.write(feature_names[top_neg])
 
+# ------------------- YouTube Summarizer ------------------- #
+
+
+def summarize_youtube_video(url, llm, target_lang="auto"):
+    try:
+        video_id = extract_video_id(url)
+
+        # Fetch transcript (try both English + Hindi)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        text = " ".join([t['text'] for t in transcript])
+
+        from langchain.docstore.document import Document
+        docs = [Document(page_content=text)]
+
+        # Split transcript into chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=2000, chunk_overlap=200
+        )
+        split_docs = text_splitter.split_documents(docs)
+
+        # Decide summarization language
+        if target_lang == "hi":
+            instruction = "इस वीडियो ट्रांसक्रिप्ट का संक्षेप हिंदी में लिखिए। अगर मूल पाठ अंग्रेज़ी में है तो पहले अनुवाद कर संक्षेप हिंदी में लिखें।"
+        elif target_lang == "en":
+            instruction = "Summarize this video transcript in English."
+        else:
+            instruction = "Summarize this video transcript in its original language."
+
+        # Custom prompt (overrides LangChain default)
+        prompt_template = PromptTemplate(
+            template=f"""{instruction}
+
+Transcript:
+{{text}}
+
+Summary:""",
+            input_variables=["text"]
+        )
+
+        # Use LLMChain directly
+        chain = LLMChain(llm=llm, prompt=prompt_template)
+
+        # Join transcript for summarization
+        combined_text = " ".join([d.page_content for d in split_docs])
+
+        summary = chain.run({"text": combined_text})
+
+        return summary
+
+    except Exception as e:
+        return f"Error while summarizing: {e}"
+
+
+
+
 # ------------------- Streamlit App ------------------- #
 
-st.set_page_config(page_title="YouTube Sentiment Analyzer", layout="wide")
-st.title("🎬 Sentiment Analyzer (IMDb Model + Hugging Face)")
 
-# Sidebar info
-with st.sidebar:
-    st.header("ℹ️ Model Info")
-    st.markdown("""
-    - **Trained On:** IMDb Reviews  
-    - **Model:** Logistic Regression  
-    - **Vectorizer:** TF-IDF (1-2 grams)  
-    - **Tuned with:** GridSearchCV  
-    - **Compared With:** distilBERT (HF)  
-    """)
+st.title("🎬 Youtube Video and Comment Analyzer")
+
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4 ,tab5 = st.tabs([
+    "📝 YouTube Video Summarizer",
     "📺 YouTube Sentiment Comparison",
     "🧪 Try Custom Review",
     "📊 Word Importance",
-    "📂 Bulk Review Upload"
+    "📂 Bulk Review Upload",
+    
+
 ])
 
 # ------------------- Tab 1: YouTube Sentiment Comparison ------------------- #
-with tab1:
+with tab2:
     st.subheader("📺 Analyze YouTube Video Comments")
 
     video_url = st.text_input("Enter YouTube Video URL:")
@@ -144,7 +200,7 @@ with tab1:
                     st.error(f"Error: {e}")
 
 # ------------------- Tab 2: Custom IMDb-Style Review ------------------- #
-with tab2:
+with tab3:
     st.subheader("🧪 Try Your Own Review (IMDb-style)")
     user_review = st.text_area("Enter a movie review:")
     if user_review:
@@ -156,12 +212,12 @@ with tab2:
         st.markdown(f"Confidence: `{max(proba):.2f}`")
 
 # ------------------- Tab 3: Word Importance ------------------- #
-with tab3:
+with tab4:
     st.subheader("📊 Top Influential Words from IMDb Model")
     plot_top_tfidf_words(vectorizer, model, top_n=20)
 
 # ------------------- Tab 4: Bulk Review Upload ------------------- #
-with tab4:
+with tab5:
     st.subheader("📂 Upload a CSV of Reviews")
     uploaded_file = st.file_uploader("Upload CSV with column `review`", type="csv")
     if uploaded_file:
@@ -174,4 +230,44 @@ with tab4:
             st.dataframe(df_upload[['review', 'Sentiment']])
         else:
             st.error("CSV must have a 'review' column.")
+
+
+
+# ------------------- Tab 5: YouTube Summarizer ------------------- #
+with tab1:
+    st.subheader("📝 Summarize YouTube Video")
+    video_url_sum = st.text_input("Enter YouTube Video URL for summarization:")
+
+    # Let user choose summary language
+    lang_choice = st.radio(
+        "Select summary language:",
+        ["Auto ", "English", "Hindi"],
+        index=0,
+        horizontal=True
+    )
+
+    
+
+    if st.button("Summarize Video"):
+        if not video_url_sum:
+            st.error("Please enter a valid YouTube URL")
+        else:
+            with st.spinner("Generating summary..."):
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-1.5-flash",
+                    google_api_key=st.secrets["google"]["api_key"],
+                    temperature=0
+                )
+                # Map choice to code
+                if lang_choice == "English":
+                    lang_code = "en"
+                elif lang_choice == "Hindi":
+                    lang_code = "hi"
+                else:
+                    lang_code = "auto"
+
+                summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
+
+                st.success("✅ Summary Generated!")
+                st.write(summary)
 
