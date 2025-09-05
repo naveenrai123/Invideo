@@ -88,7 +88,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         video_id = extract_video_id(url)
 
         # Fetch transcript (try both English + Hindi)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en','en-IN', 'hi'])
         text = " ".join([t['text'] for t in transcript])
 
         from langchain.docstore.document import Document
@@ -270,4 +270,5 @@ with tab1:
 
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
