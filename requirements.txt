@@ -4,7 +4,7 @@ joblib
 pandas
 matplotlib
 numpy
-scikit-learn==1.5.1
+scikit-learn
 transformers
 torch
 youtube-transcript-api==0.6.2
