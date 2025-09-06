@@ -18,23 +18,8 @@ from langchain.chains import LLMChain
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-def load_hf_pipeline():
-    model_name = "distilbert-base-uncased-finetuned-sst-2-english"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    hf_model = AutoModelForSequenceClassification.from_pretrained(
-        model_name,
-        low_cpu_mem_usage=False,   # ✅ fix meta tensor issue
-        torch_dtype="float32"      # ✅ safe dtype
-    )
-    return pipeline(
-        "sentiment-analysis",
-        model=hf_model,
-        tokenizer=tokenizer,
-        device=-1   # ✅ force CPU for Streamlit Cloud
-    )
 
-hf_pipeline = load_hf_pipeline()
-hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
+hf_pipeline = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=-1)
 
 # ------------------- Utility Functions ------------------- #
 st.set_page_config(page_title="Invideo", layout="wide")
@@ -284,6 +269,7 @@ with tab1:
 
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
