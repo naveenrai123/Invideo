@@ -134,7 +134,7 @@ Summary:""",
 
 
 # ------------------- Streamlit App ------------------- #
-st.title("🎬 Youtube Video and Comment Analyzer")
+st.title("🎬 INVIDEO Analyzer")
 
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -242,4 +242,5 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
