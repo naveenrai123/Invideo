@@ -1,4 +1,3 @@
-
 import streamlit as st
 from googleapiclient.discovery import build
 import joblib
@@ -7,20 +6,30 @@ import matplotlib.pyplot as plt
 import re
 import numpy as np
 from collections import Counter
-from transformers import pipeline
 from youtube_transcript_api import YouTubeTranscriptApi
 # LangChain imports
 from langchain_community.document_loaders import YoutubeLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains.summarize import load_summarize_chain
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-# Load custom model and vectorizer
+
+# ------------------- Load custom model and vectorizer ------------------- #
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
+
+# Lazy Hugging Face pipeline loader (avoids meta tensor error)
+hf_pipeline = None
+def get_hf_pipeline():
+    global hf_pipeline
+    if hf_pipeline is None:
+        from transformers import pipeline
+        hf_pipeline = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            device=-1  # Force CPU
+        )
+    return hf_pipeline
 
 # ------------------- Utility Functions ------------------- #
 st.set_page_config(page_title="Invideo", layout="wide")
@@ -58,8 +67,10 @@ def compare_sentiments(comments):
         vector = vectorizer.transform([clean])
         custom_pred = model.predict(vector)[0]
         custom_label = 'Positive' if custom_pred == 1 else 'Negative'
-        hf_result = hf_pipeline(comment[:512])[0]
+
+        hf_result = get_hf_pipeline()(comment[:512])[0]
         hf_label = 'Positive' if 'POS' in hf_result['label'].upper() else 'Negative'
+
         results.append({
             "Comment": comment,
             "Custom Model": custom_label,
@@ -81,8 +92,6 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
-
-
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
@@ -119,12 +128,8 @@ Summary:""",
             input_variables=["text"]
         )
 
-        # Use LLMChain directly
         chain = LLMChain(llm=llm, prompt=prompt_template)
-
-        # Join transcript for summarization
         combined_text = " ".join([d.page_content for d in split_docs])
-
         summary = chain.run({"text": combined_text})
 
         return summary
@@ -132,24 +137,16 @@ Summary:""",
     except Exception as e:
         return f"Error while summarizing: {e}"
 
-
-
-
 # ------------------- Streamlit App ------------------- #
-
-
 st.title("🎬 Youtube Video and Comment Analyzer")
 
-
 # Tabs
-tab1, tab2, tab3, tab4 ,tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 YouTube Video Summarizer",
     "📺 YouTube Sentiment Comparison",
     "🧪 Try Custom Review",
     "📊 Word Importance",
     "📂 Bulk Review Upload",
-    
-
 ])
 
 # ------------------- Tab 1: YouTube Sentiment Comparison ------------------- #
@@ -159,10 +156,7 @@ with tab2:
     video_url = st.text_input("Enter YouTube Video URL:")
     max_results = st.slider("Number of Comments", 50, 250, 100)
 
-  
-   
     api_key = st.secrets["youtube"]["api_key"]
-  
 
     if st.button("Compare Models"):
         if not api_key or not video_url:
@@ -231,22 +225,17 @@ with tab5:
         else:
             st.error("CSV must have a 'review' column.")
 
-
-
 # ------------------- Tab 5: YouTube Summarizer ------------------- #
 with tab1:
     st.subheader("📝 Summarize YouTube Video")
     video_url_sum = st.text_input("Enter YouTube Video URL for summarization:")
 
-    # Let user choose summary language
     lang_choice = st.radio(
         "Select summary language:",
         ["Auto ", "English", "Hindi"],
         index=0,
         horizontal=True
     )
-
-    
 
     if st.button("Summarize Video"):
         if not video_url_sum:
@@ -258,7 +247,6 @@ with tab1:
                     google_api_key=st.secrets["google"]["api_key"],
                     temperature=0
                 )
-                # Map choice to code
                 if lang_choice == "English":
                     lang_code = "en"
                 elif lang_choice == "Hindi":
@@ -267,7 +255,5 @@ with tab1:
                     lang_code = "auto"
 
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
-
                 st.success("✅ Summary Generated!")
                 st.write(summary)
-
