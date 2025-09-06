@@ -75,24 +75,36 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
+        if not video_id:
+            return "❌ Could not extract a valid video ID."
 
-        # Fetch transcript (try both English + Hindi)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        # Try English + Hindi first, then fallback to any available transcript
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        except (TranscriptsDisabled, NoTranscriptFound):
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any lang
+            except (TranscriptsDisabled, NoTranscriptFound):
+                return "❌ Transcript not available for this video."
+
+        # Combine transcript text
         text = " ".join([t['text'] for t in transcript])
 
         from langchain.docstore.document import Document
         docs = [Document(page_content=text)]
 
-        # Split transcript into chunks
+        # Split into chunks
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000, chunk_overlap=200
         )
         split_docs = text_splitter.split_documents(docs)
 
-        # Decide summarization language
+        # Choose summarization language
         if target_lang == "hi":
             instruction = "इस वीडियो ट्रांसक्रिप्ट का संक्षेप हिंदी में लिखिए। अगर मूल पाठ अंग्रेज़ी में है तो पहले अनुवाद कर संक्षेप हिंदी में लिखें।"
         elif target_lang == "en":
@@ -118,7 +130,8 @@ Summary:""",
         return summary
 
     except Exception as e:
-        return f"Error while summarizing: {e}"
+        return f"⚠️ Error while summarizing: {e}"
+
 
 # ------------------- Streamlit App ------------------- #
 st.title("🎬 Youtube Video and Comment Analyzer")
@@ -229,3 +242,4 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
