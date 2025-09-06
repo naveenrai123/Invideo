@@ -18,19 +18,6 @@ from langchain.chains import LLMChain
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
-# Lazy Hugging Face pipeline loader (avoids meta tensor error)
-hf_pipeline = None
-def get_hf_pipeline():
-    global hf_pipeline
-    if hf_pipeline is None:
-        from transformers import pipeline
-        hf_pipeline = pipeline(
-            "sentiment-analysis",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            device=-1  # Force CPU
-        )
-    return hf_pipeline
-
 # ------------------- Utility Functions ------------------- #
 st.set_page_config(page_title="Invideo", layout="wide")
 
@@ -60,7 +47,7 @@ def get_youtube_comments(api_key, video_id, max_results=100):
         comments.append(comment)
     return comments
 
-def compare_sentiments(comments):
+def analyze_sentiments(comments):
     results = []
     for comment in comments:
         clean = clean_text(comment)
@@ -68,13 +55,9 @@ def compare_sentiments(comments):
         custom_pred = model.predict(vector)[0]
         custom_label = 'Positive' if custom_pred == 1 else 'Negative'
 
-        hf_result = get_hf_pipeline()(comment[:512])[0]
-        hf_label = 'Positive' if 'POS' in hf_result['label'].upper() else 'Negative'
-
         results.append({
             "Comment": comment,
-            "Custom Model": custom_label,
-            "HF Model": hf_label
+            "Custom Model": custom_label
         })
     return pd.DataFrame(results)
 
@@ -117,7 +100,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         else:
             instruction = "Summarize this video transcript in its original language."
 
-        # Custom prompt (overrides LangChain default)
+        # Custom prompt
         prompt_template = PromptTemplate(
             template=f"""{instruction}
 
@@ -143,13 +126,13 @@ st.title("🎬 Youtube Video and Comment Analyzer")
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 YouTube Video Summarizer",
-    "📺 YouTube Sentiment Comparison",
+    "📺 YouTube Sentiment Analysis",
     "🧪 Try Custom Review",
     "📊 Word Importance",
     "📂 Bulk Review Upload",
 ])
 
-# ------------------- Tab 1: YouTube Sentiment Comparison ------------------- #
+# ------------------- Tab 1: YouTube Sentiment Analysis ------------------- #
 with tab2:
     st.subheader("📺 Analyze YouTube Video Comments")
 
@@ -158,7 +141,7 @@ with tab2:
 
     api_key = st.secrets["youtube"]["api_key"]
 
-    if st.button("Compare Models"):
+    if st.button("Analyze Comments"):
         if not api_key or not video_url:
             st.error("Please provide both API key and video URL.")
         else:
@@ -166,29 +149,18 @@ with tab2:
                 try:
                     video_id = extract_video_id(video_url)
                     comments = get_youtube_comments(api_key, video_id, max_results)
-                    df_compare = compare_sentiments(comments)
+                    df_results = analyze_sentiments(comments)
 
                     st.subheader("📝 Results")
-                    st.dataframe(df_compare)
-
-                    df_compare["Match"] = df_compare["Custom Model"] == df_compare["HF Model"]
-                    match_rate = df_compare["Match"].mean() * 100
-                    st.success(f"✅ Agreement: {match_rate:.2f}%")
+                    st.dataframe(df_results)
 
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.markdown("**Custom Model**")
-                        fig1, ax1 = plt.subplots()
-                        df_compare["Custom Model"].value_counts().plot(kind="bar", color="skyblue", ax=ax1)
-                        ax1.set_ylabel("Count")
-                        st.pyplot(fig1)
-
-                    with col2:
-                        st.markdown("**Hugging Face Model**")
-                        fig2, ax2 = plt.subplots()
-                        df_compare["HF Model"].value_counts().plot(kind="bar", color="orange", ax=ax2)
-                        ax2.set_ylabel("Count")
-                        st.pyplot(fig2)
+                        st.markdown("**Custom Model Sentiment Distribution**")
+                        fig, ax = plt.subplots()
+                        df_results["Custom Model"].value_counts().plot(kind="bar", color="skyblue", ax=ax)
+                        ax.set_ylabel("Count")
+                        st.pyplot(fig)
 
                 except Exception as e:
                     st.error(f"Error: {e}")
