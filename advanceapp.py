@@ -91,7 +91,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
             "http": "http://hgvenkry:3up4wvgtzpft@23.95.150.145:6114",
             "https": "http://hgvenkry:3up4wvgtzpft@23.95.150.145:6114"
             }
-            r
+            
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'],proxies=proxies)
         except (TranscriptsDisabled, NoTranscriptFound):
             try:
@@ -249,6 +249,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
