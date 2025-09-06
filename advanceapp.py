@@ -1,4 +1,3 @@
-
 import streamlit as st
 from googleapiclient.discovery import build
 import joblib
@@ -7,19 +6,34 @@ import matplotlib.pyplot as plt
 import re
 import numpy as np
 from collections import Counter
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from youtube_transcript_api import YouTubeTranscriptApi
 # LangChain imports
 from langchain_community.document_loaders import YoutubeLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.summarize import load_summarize_chain
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
+def load_hf_pipeline():
+    model_name = "distilbert-base-uncased-finetuned-sst-2-english"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    hf_model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        low_cpu_mem_usage=False,   # ✅ fix meta tensor issue
+        torch_dtype="float32"      # ✅ safe dtype
+    )
+    return pipeline(
+        "sentiment-analysis",
+        model=hf_model,
+        tokenizer=tokenizer,
+        device=-1   # ✅ force CPU for Streamlit Cloud
+    )
+
+hf_pipeline = load_hf_pipeline()
 hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
 
 # ------------------- Utility Functions ------------------- #
@@ -270,5 +284,6 @@ with tab1:
 
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
