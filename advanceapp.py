@@ -1,3 +1,4 @@
+
 import streamlit as st
 from googleapiclient.discovery import build
 import joblib
@@ -6,20 +7,20 @@ import matplotlib.pyplot as plt
 import re
 import numpy as np
 from collections import Counter
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+from transformers import pipeline
 from youtube_transcript_api import YouTubeTranscriptApi
 # LangChain imports
 from langchain_community.document_loaders import YoutubeLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.summarize import load_summarize_chain
 from langchain_google_genai import ChatGoogleGenerativeAI
+
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 # Load custom model and vectorizer
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
-
-hf_pipeline = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english", device=-1)
+hf_pipeline = pipeline("sentiment-analysis")  # Hugging Face model
 
 # ------------------- Utility Functions ------------------- #
 st.set_page_config(page_title="Invideo", layout="wide")
@@ -87,7 +88,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         video_id = extract_video_id(url)
 
         # Fetch transcript (try both English + Hindi)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en','en-IN', 'hi'])
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
         text = " ".join([t['text'] for t in transcript])
 
         from langchain.docstore.document import Document
@@ -269,7 +270,4 @@ with tab1:
 
                 st.success("✅ Summary Generated!")
                 st.write(summary)
-
-
-
 
