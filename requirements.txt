@@ -5,7 +5,7 @@ pandas
 matplotlib
 numpy
 scikit-learn
-youtube-transcript-api
+youtube-transcript-api==0.6.2
 langchain
 langchain-community
 langchain-google-genai
