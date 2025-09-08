@@ -7,6 +7,7 @@ import re
 import numpy as np
 from collections import Counter
 
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 # LangChain imports
 
@@ -77,33 +78,6 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.markdown("**Top Negative Words**")
         st.write(feature_names[top_neg])
 
-
-
-def get_captions_text(video_id, api_key):
-    from googleapiclient.discovery import build
-    youtube = build("youtube", "v3", developerKey=api_key)
-    try:
-        captions = youtube.captions().list(
-            part="snippet",
-            videoId=video_id
-        ).execute()
-
-        # Find English auto captions
-        caption_id = None
-        for item in captions.get("items", []):
-            if item["snippet"]["language"] in ["en", "en-US","hi"]:
-                caption_id = item["id"]
-                break
-
-        if not caption_id:
-            return None
-
-        caption = youtube.captions().download(id=caption_id).execute()
-        return caption['body']  # text content of captions
-    except Exception as e:
-        print(e)
-        return None
-
 # ------------------- YouTube Summarizer ------------------- #
 from langchain.docstore.document import Document
 
@@ -113,15 +87,29 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         video_id = extract_video_id(url)
         if not video_id:
             return "❌ Could not extract a valid video ID."
-        api_key = st.secrets["youtube"]["api_key"]
-        transcript_text = get_captions_text(video_id, api_key)
-        
-        if transcript_text is None:
-            return "❌ No captions available for this video. Cannot generate summary."
-        
-        # Convert to Document for LLM
-        docs = [Document(page_content=transcript_text)]
 
+        # Load proxies from Streamlit secrets
+        proxy_secrets = st.secrets["youtube_proxies"]
+        proxy_list = [{"http": p, "https": p} for p in proxy_secrets.values()]
+
+        # Try each proxy randomly
+        transcript = None
+        for proxies in random.sample(proxy_list, len(proxy_list)):
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'], proxies=proxies)
+                break  # success
+            except (TranscriptsDisabled, NoTranscriptFound):
+                continue  # fallback to next proxy
+            except Exception as e:
+                print(f"Proxy failed: {e}")
+                continue
+
+        if transcript is None:
+            return "❌ Could not retrieve a transcript for this video. All proxies failed."
+
+        # Combine transcript into plain text
+        text = " ".join([t['text'] for t in transcript])
+        docs = [Document(page_content=text)]
 
         # Split into chunks
         text_splitter = RecursiveCharacterTextSplitter(
@@ -270,8 +258,6 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
-
-
 
 
 
