@@ -81,20 +81,31 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
 # ------------------- YouTube Summarizer ------------------- #
 from langchain.docstore.document import Document
 
+
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
         if not video_id:
             return "❌ Could not extract a valid video ID."
 
-        # ✅ Use youtube-transcript-api instead of YouTube Data API
-        try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
-        except (TranscriptsDisabled, NoTranscriptFound):
+        # Load proxies from Streamlit secrets
+        proxy_secrets = st.secrets["youtube_proxies"]
+        proxy_list = [{"http": p, "https": p} for p in proxy_secrets.values()]
+
+        # Try each proxy randomly
+        transcript = None
+        for proxies in random.sample(proxy_list, len(proxy_list)):
             try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any language
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'], proxies=proxies)
+                break  # success
             except (TranscriptsDisabled, NoTranscriptFound):
-                return "❌ Transcript not available for this video."
+                continue  # fallback to next proxy
+            except Exception as e:
+                print(f"Proxy failed: {e}")
+                continue
+
+        if transcript is None:
+            return "❌ Could not retrieve a transcript for this video. All proxies failed."
 
         # Combine transcript into plain text
         text = " ".join([t['text'] for t in transcript])
@@ -133,6 +144,7 @@ Summary:""",
 
     except Exception as e:
         return f"⚠️ Error while summarizing: {e}"
+
 
 
 
@@ -246,6 +258,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
