@@ -8,7 +8,7 @@ import numpy as np
 from collections import Counter
 from youtube_transcript_api import YouTubeTranscriptApi
 # LangChain imports
-from langchain_community.document_loaders import YoutubeLoader
+
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
@@ -254,6 +254,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
