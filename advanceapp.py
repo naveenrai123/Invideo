@@ -88,8 +88,6 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         try:
             
             proxies = {
-            "http": "http://hgvenkry:3up4wvgtzpft@216.10.27.159:6837",
-            "https":"http://hgvenkry:3up4wvgtzpft@216.10.27.159:6837",
             "http": "http://hgvenkry:3up4wvgtzpft@45.43.186.39:6257",
             "https": "http://hgvenkry:3up4wvgtzpft@45.43.186.39:6257"
             }
@@ -251,6 +249,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
