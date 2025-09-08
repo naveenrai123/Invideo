@@ -76,27 +76,37 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from langchain.docstore.document import Document
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
         if not video_id:
-            return " Could not extract a valid video ID."
+            return "❌ Could not extract a valid video ID."
 
-        # Try English + Hindi first, then fallback to any available transcript
-        try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
-        except (TranscriptsDisabled, NoTranscriptFound):
-            try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any lang
-            except (TranscriptsDisabled, NoTranscriptFound):
-                return " Transcript not available for this video."
+        # ✅ Use YouTube Data API to fetch captions
+        youtube = build("youtube", "v3", developerKey=st.secrets["google"]["api_key"])
+        captions_request = youtube.captions().list(
+            part="snippet",
+            videoId=video_id
+        )
+        captions_response = captions_request.execute()
 
-        # Combine transcript text
-        text = " ".join([t['text'] for t in transcript])
+        if not captions_response.get("items"):
+            return "❌ No captions available for this video."
 
-        from langchain.docstore.document import Document
+        # Get the first caption track ID
+        caption_id = captions_response["items"][0]["id"]
+
+        # Download caption track
+        subtitle_request = youtube.captions().download(id=caption_id)
+        subtitle = subtitle_request.execute()
+
+        if not subtitle:
+            return "❌ Could not fetch transcript from YouTube API."
+
+        # Prepare transcript text
+        text = subtitle if isinstance(subtitle, str) else str(subtitle)
         docs = [Document(page_content=text)]
 
         # Split into chunks
@@ -131,7 +141,8 @@ Summary:""",
         return summary
 
     except Exception as e:
-        return f"Error while summarizing: {e}"
+        return f"⚠️ Error while summarizing: {e}"
+
 
 
 # ------------------- Streamlit App ------------------- #
@@ -243,6 +254,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
