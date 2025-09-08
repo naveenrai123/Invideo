@@ -6,8 +6,11 @@ import matplotlib.pyplot as plt
 import re
 import numpy as np
 from collections import Counter
-from youtube_transcript_api import YouTubeTranscriptApi
+
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+
 # LangChain imports
+
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -84,29 +87,17 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         if not video_id:
             return "❌ Could not extract a valid video ID."
 
-        # ✅ Use YouTube Data API to fetch captions
-        youtube = build("youtube", "v3", developerKey=st.secrets["google"]["api_key"])
-        captions_request = youtube.captions().list(
-            part="snippet",
-            videoId=video_id
-        )
-        captions_response = captions_request.execute()
+        # ✅ Use youtube-transcript-api instead of YouTube Data API
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        except (TranscriptsDisabled, NoTranscriptFound):
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any language
+            except (TranscriptsDisabled, NoTranscriptFound):
+                return "❌ Transcript not available for this video."
 
-        if not captions_response.get("items"):
-            return "❌ No captions available for this video."
-
-        # Get the first caption track ID
-        caption_id = captions_response["items"][0]["id"]
-
-        # Download caption track
-        subtitle_request = youtube.captions().download(id=caption_id)
-        subtitle = subtitle_request.execute()
-
-        if not subtitle:
-            return "❌ Could not fetch transcript from YouTube API."
-
-        # Prepare transcript text
-        text = subtitle if isinstance(subtitle, str) else str(subtitle)
+        # Combine transcript into plain text
+        text = " ".join([t['text'] for t in transcript])
         docs = [Document(page_content=text)]
 
         # Split into chunks
@@ -123,7 +114,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         else:
             instruction = "Summarize this video transcript in its original language."
 
-        # Custom prompt
+        # Prompt for LLM
         prompt_template = PromptTemplate(
             template=f"""{instruction}
 
@@ -142,6 +133,7 @@ Summary:""",
 
     except Exception as e:
         return f"⚠️ Error while summarizing: {e}"
+
 
 
 
@@ -254,6 +246,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
