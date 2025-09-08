@@ -82,6 +82,7 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
 from langchain.docstore.document import Document
 
 
+
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
@@ -89,35 +90,47 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
             return "❌ Could not extract a valid video ID."
 
         # Load proxies from Streamlit secrets
-        proxy_secrets = st.secrets["youtube_proxies"]
-        proxy_list = [{"http": p, "https": p} for p in proxy_secrets.values()]
+        proxy_list = list(st.secrets["youtube_proxies"].values())
 
-        # Try each proxy randomly
         transcript = None
-        for proxies in random.sample(proxy_list, len(proxy_list)):
+        for proxy_url in proxy_list + [None]:  # Try all proxies, then no proxy
             try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'], proxies=proxies)
-                break  # success
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
+                # YouTubeTranscriptApi does not support proxies directly.
+                # So we fetch transcript via requests if proxy is given
+                if proxies:
+                    # Fetch transcript manually using requests session
+                    from youtube_transcript_api._api import YouTubeTranscriptApiException
+                    from youtube_transcript_api._transcripts import Transcripts
+                    session = requests.Session()
+                    session.proxies.update(proxies)
+                    transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
+                    transcript = transcript_list.fetch()
+                else:
+                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+
+                if transcript:
+                    break  # Success
+
             except (TranscriptsDisabled, NoTranscriptFound):
-                continue  # fallback to next proxy
+                continue
             except Exception as e:
-                print(f"Proxy failed: {e}")
+                print(f"Proxy failed: {proxy_url} | Error: {e}")
                 continue
 
         if transcript is None:
-            return "❌ Could not retrieve a transcript for this video. All proxies failed."
+            return "❌ Could not retrieve a transcript. All proxies failed."
 
-        # Combine transcript into plain text
+        # Combine transcript into text
         text = " ".join([t['text'] for t in transcript])
         docs = [Document(page_content=text)]
 
-        # Split into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000, chunk_overlap=200
-        )
+        # Split text into chunks
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         split_docs = text_splitter.split_documents(docs)
 
-        # Choose summarization language
+        # Choose language instruction
         if target_lang == "hi":
             instruction = "इस वीडियो ट्रांसक्रिप्ट का संक्षेप हिंदी में लिखिए। अगर मूल पाठ अंग्रेज़ी में है तो पहले अनुवाद कर संक्षेप हिंदी में लिखें।"
         elif target_lang == "en":
@@ -125,7 +138,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         else:
             instruction = "Summarize this video transcript in its original language."
 
-        # Prompt for LLM
+        # Build LLM prompt
         prompt_template = PromptTemplate(
             template=f"""{instruction}
 
@@ -144,6 +157,7 @@ Summary:""",
 
     except Exception as e:
         return f"⚠️ Error while summarizing: {e}"
+
 
 
 
@@ -258,6 +272,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
