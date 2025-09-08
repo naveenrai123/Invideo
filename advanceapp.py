@@ -82,7 +82,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
         if not video_id:
-            return "❌ Could not extract a valid video ID."
+            return " Could not extract a valid video ID."
 
         # Try English + Hindi first, then fallback to any available transcript
         try:
@@ -97,7 +97,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
             try:
                 transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any lang
             except (TranscriptsDisabled, NoTranscriptFound):
-                return "❌ Transcript not available for this video."
+                return " Transcript not available for this video."
 
         # Combine transcript text
         text = " ".join([t['text'] for t in transcript])
@@ -137,7 +137,7 @@ Summary:""",
         return summary
 
     except Exception as e:
-        return f"⚠️ Error while summarizing: {e}"
+        return f"Error while summarizing: {e}"
 
 
 # ------------------- Streamlit App ------------------- #
@@ -249,6 +249,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
