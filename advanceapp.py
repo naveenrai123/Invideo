@@ -86,13 +86,7 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
 
         # Try English + Hindi first, then fallback to any available transcript
         try:
-            
-            proxies = {
-            "http": "http://hgvenkry:3up4wvgtzpft@45.43.186.39:6257",
-            "https": "http://hgvenkry:3up4wvgtzpft@45.43.186.39:6257"
-            }
-            
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'],proxies=proxies)
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
         except (TranscriptsDisabled, NoTranscriptFound):
             try:
                 transcript = YouTubeTranscriptApi.get_transcript(video_id)  # fallback any lang
@@ -249,6 +243,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
