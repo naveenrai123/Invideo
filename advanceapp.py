@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import re
 import numpy as np
 from collections import Counter
-
+import random
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 # LangChain imports
@@ -258,6 +258,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
