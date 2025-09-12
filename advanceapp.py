@@ -139,7 +139,8 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         if not video_id:
             return " Could not extract a valid video ID."
 
-        text = fetch_transcript(video_id)
+        text = fetch_transcript(video_id, target_lang)
+
         if not text:
             return " Could not retrieve a transcript or captions."
 
@@ -276,6 +277,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
