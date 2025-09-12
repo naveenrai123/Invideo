@@ -8,14 +8,14 @@ import numpy as np
 from collections import Counter
 import random
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+from pytube import YouTube   # Added for fallback
 
 # LangChain imports
-
-
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
+from langchain.docstore.document import Document
 import requests
 
 # ------------------- Load custom model and vectorizer ------------------- #
@@ -58,7 +58,6 @@ def analyze_sentiments(comments):
         vector = vectorizer.transform([clean])
         custom_pred = model.predict(vector)[0]
         custom_label = 'Positive' if custom_pred == 1 else 'Negative'
-
         results.append({
             "Comment": comment,
             "Custom Model": custom_label
@@ -79,58 +78,58 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
-from langchain.docstore.document import Document
+def fetch_transcript(video_id):
+    """
+    Try YouTubeTranscriptApi first.
+    If fails, fall back to Pytube captions.
+    """
+    transcript = None
+    # Try proxies first
+    proxy_list = list(st.secrets["youtube_proxies"].values())
+    for proxy_url in proxy_list + [None]:
+        try:
+            proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+            if proxies:
+                from youtube_transcript_api._transcripts import Transcripts
+                session = requests.Session()
+                session.proxies.update(proxies)
+                transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
+                transcript = transcript_list.fetch()
+            else:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+            if transcript:
+                return " ".join([t['text'] for t in transcript])
+        except (TranscriptsDisabled, NoTranscriptFound):
+            continue
+        except Exception:
+            continue
 
+    # Fallback: Pytube captions
+    try:
+        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+        caption = yt.captions.get_by_language_code("en")
+        if caption:
+            return caption.generate_srt_captions()
+    except Exception as e:
+        print("Pytube failed:", e)
 
+    return None
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
         if not video_id:
-            return "❌ Could not extract a valid video ID."
+            return " Could not extract a valid video ID."
 
-        # Load proxies from Streamlit secrets
-        proxy_list = list(st.secrets["youtube_proxies"].values())
+        text = fetch_transcript(video_id)
+        if not text:
+            return " Could not retrieve a transcript or captions."
 
-        transcript = None
-        for proxy_url in proxy_list + [None]:  # Try all proxies, then no proxy
-            try:
-                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-
-                # YouTubeTranscriptApi does not support proxies directly.
-                # So we fetch transcript via requests if proxy is given
-                if proxies:
-                    # Fetch transcript manually using requests session
-                    from youtube_transcript_api._api import YouTubeTranscriptApiException
-                    from youtube_transcript_api._transcripts import Transcripts
-                    session = requests.Session()
-                    session.proxies.update(proxies)
-                    transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
-                    transcript = transcript_list.fetch()
-                else:
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
-
-                if transcript:
-                    break  # Success
-
-            except (TranscriptsDisabled, NoTranscriptFound):
-                continue
-            except Exception as e:
-                print(f"Proxy failed: {proxy_url} | Error: {e}")
-                continue
-
-        if transcript is None:
-            return "❌ Could not retrieve a transcript. All proxies failed."
-
-        # Combine transcript into text
-        text = " ".join([t['text'] for t in transcript])
+        # LangChain summarization
         docs = [Document(page_content=text)]
-
-        # Split text into chunks
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         split_docs = text_splitter.split_documents(docs)
 
-        # Choose language instruction
         if target_lang == "hi":
             instruction = "इस वीडियो ट्रांसक्रिप्ट का संक्षेप हिंदी में लिखिए। अगर मूल पाठ अंग्रेज़ी में है तो पहले अनुवाद कर संक्षेप हिंदी में लिखें।"
         elif target_lang == "en":
@@ -138,7 +137,6 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
         else:
             instruction = "Summarize this video transcript in its original language."
 
-        # Build LLM prompt
         prompt_template = PromptTemplate(
             template=f"""{instruction}
 
@@ -154,14 +152,8 @@ Summary:""",
         summary = chain.run({"text": combined_text})
 
         return summary
-
     except Exception as e:
         return f"⚠️ Error while summarizing: {e}"
-
-
-
-
-
 
 # ------------------- Streamlit App ------------------- #
 st.title("🎬 INVIDEO Analyzer")
@@ -175,13 +167,11 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📂 Bulk Review Upload",
 ])
 
-# ------------------- Tab 1: YouTube Sentiment Analysis ------------------- #
+# ------------------- Tab 1: YouTube Comments Analysis ------------------- #
 with tab2:
     st.subheader("📺 Analyze YouTube Video Comments")
-
     video_url = st.text_input("Enter YouTube Video URL:")
     max_results = st.slider("Number of Comments", 50, 250, 100)
-
     api_key = st.secrets["youtube"]["api_key"]
 
     if st.button("Analyze Comments"):
@@ -193,10 +183,8 @@ with tab2:
                     video_id = extract_video_id(video_url)
                     comments = get_youtube_comments(api_key, video_id, max_results)
                     df_results = analyze_sentiments(comments)
-
                     st.subheader("📝 Results")
                     st.dataframe(df_results)
-
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**Custom Model Sentiment Distribution**")
@@ -204,11 +192,10 @@ with tab2:
                         df_results["Custom Model"].value_counts().plot(kind="bar", color="skyblue", ax=ax)
                         ax.set_ylabel("Count")
                         st.pyplot(fig)
-
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# ------------------- Tab 2: Custom IMDb-Style Review ------------------- #
+# ------------------- Tab 2: Custom Review ------------------- #
 with tab3:
     st.subheader("🧪 Try Your Own Review (IMDb-style)")
     user_review = st.text_area("Enter a movie review:")
@@ -244,7 +231,6 @@ with tab5:
 with tab1:
     st.subheader("📝 Summarize YouTube Video")
     video_url_sum = st.text_input("Enter YouTube Video URL for summarization:")
-
     lang_choice = st.radio(
         "Select summary language:",
         ["Auto ", "English", "Hindi"],
@@ -272,18 +258,3 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
