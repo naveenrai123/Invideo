@@ -81,7 +81,7 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
 def fetch_transcript(video_id):
     """
     Try YouTubeTranscriptApi first.
-    If fails, fall back to Pytube captions.
+    If fails, fall back to Pytube captions (clean text).
     """
     transcript = None
     # Try proxies first
@@ -104,12 +104,22 @@ def fetch_transcript(video_id):
         except Exception:
             continue
 
-    # Fallback: Pytube captions
+    # Fallback: Pytube captions 
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
         caption = yt.captions.get_by_language_code("en")
         if caption:
-            return caption.generate_srt_captions()
+            srt_captions = caption.generate_srt_captions()
+            # Clean SRT (remove numbers + timestamps)
+            cleaned_lines = []
+            for line in srt_captions.split("\n"):
+                if re.match(r"^\d+$", line):  # Skip caption numbering
+                    continue
+                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):  # Skip timestamps
+                    continue
+                if line.strip():
+                    cleaned_lines.append(line.strip())
+            return " ".join(cleaned_lines)
     except Exception as e:
         print("Pytube failed:", e)
 
@@ -258,3 +268,4 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
