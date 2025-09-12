@@ -78,13 +78,14 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
-def fetch_transcript(video_id):
+def fetch_transcript(video_id, target_lang="auto"):
     """
     Try YouTubeTranscriptApi first.
     If fails, fall back to Pytube captions (clean text).
+    target_lang: "en", "hi", or "auto"
     """
     transcript = None
-    # Try proxies first
+    # Try proxies + YouTubeTranscriptApi
     proxy_list = list(st.secrets["youtube_proxies"].values())
     for proxy_url in proxy_list + [None]:
         try:
@@ -96,7 +97,8 @@ def fetch_transcript(video_id):
                 transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
                 transcript = transcript_list.fetch()
             else:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+                languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
             if transcript:
                 return " ".join([t['text'] for t in transcript])
         except (TranscriptsDisabled, NoTranscriptFound):
@@ -104,13 +106,18 @@ def fetch_transcript(video_id):
         except Exception:
             continue
 
-    # Fallback: Pytube captions 
+    # ---------- Fallback: Pytube captions ----------
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        caption = yt.captions.get_by_language_code("en","hi")
+
+        if target_lang == "auto":
+            # pick first available caption
+            caption = list(yt.captions.values())[0] if yt.captions else None
+        else:
+            caption = yt.captions.get_by_language_code(target_lang)
+
         if caption:
             srt_captions = caption.generate_srt_captions()
-            # Clean SRT (remove numbers + timestamps)
             cleaned_lines = []
             for line in srt_captions.split("\n"):
                 if re.match(r"^\d+$", line):  # Skip caption numbering
@@ -124,6 +131,7 @@ def fetch_transcript(video_id):
         print("Pytube failed:", e)
 
     return None
+
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
@@ -268,5 +276,6 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
