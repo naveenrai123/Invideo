@@ -107,7 +107,7 @@ def fetch_transcript(video_id):
     # Fallback: Pytube captions 
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        caption = yt.captions.get_by_language_code("en")
+        caption = yt.captions.get_by_language_code("en","hi")
         if caption:
             srt_captions = caption.generate_srt_captions()
             # Clean SRT (remove numbers + timestamps)
@@ -268,4 +268,5 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
