@@ -110,35 +110,46 @@ def fetch_transcript(video_id, target_lang="auto"):
 
 
     # ---------- Fallback: Pytube captions ----------
-    try:
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+   # ---------- Fallback: Pytube captions ----------
+try:
+    yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
 
-        if not yt.captions:
-            print("No captions available in Pytube.")
-            return None
-        
-        if target_lang == "auto":
-            caption = next(iter(yt.captions.values()), None)
-        else:
-            caption = yt.captions.get_by_language_code(target_lang) or next(iter(yt.captions.values()), None)
+    if not yt.captions:
+        print("No captions available in Pytube.")
+        return None
 
+    # Define fallback order
+    fallback_order = []
+    if target_lang == "auto":
+        fallback_order = ["en", "hi"]
+    else:
+        fallback_order = [target_lang, "en", "hi"]
 
+    # Try preferred language first, then fallback
+    caption = None
+    for lang in fallback_order:
+        caption = yt.captions.get_by_language_code(lang)
         if caption:
-            srt_captions = caption.generate_srt_captions()
-            cleaned_lines = []
-            for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):  # Skip caption numbering
-                    continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):  # Skip timestamps
-                    continue
-                if line.strip():
-                    cleaned_lines.append(line.strip())
-            return " ".join(cleaned_lines)
-    except Exception as e:
-        print("Pytube failed:", e)
+            break
 
-    return None
+    # If still nothing, grab the first available caption
+    if not caption:
+        caption = next(iter(yt.captions.values()), None)
 
+    if caption:
+        srt_captions = caption.generate_srt_captions()
+        cleaned_lines = []
+        for line in srt_captions.split("\n"):
+            if re.match(r"^\d+$", line):
+                continue
+            if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
+                continue
+            if line.strip():
+                cleaned_lines.append(line.strip())
+        return " ".join(cleaned_lines)
+
+except Exception as e:
+    print("Pytube failed:", e)
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
@@ -284,6 +295,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
