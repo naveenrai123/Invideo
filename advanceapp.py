@@ -101,20 +101,27 @@ def fetch_transcript(video_id, target_lang="auto"):
                 transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
             if transcript:
                 return " ".join([t['text'] for t in transcript])
-        except (TranscriptsDisabled, NoTranscriptFound):
-            continue
-        except Exception:
-            continue
+            except (TranscriptsDisabled, NoTranscriptFound) as e:
+                print(f"Transcript API failed: {e}")
+                continue
+            except Exception as e:
+                print(f"Transcript API error: {e}")
+                continue
+
 
     # ---------- Fallback: Pytube captions ----------
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
 
+        if not yt.captions:
+            print("No captions available in Pytube.")
+            return None
+        
         if target_lang == "auto":
-            # pick first available caption
-            caption = list(yt.captions.values())[0] if yt.captions else None
+            caption = next(iter(yt.captions.values()), None)
         else:
-            caption = yt.captions.get_by_language_code(target_lang)
+            caption = yt.captions.get_by_language_code(target_lang) or next(iter(yt.captions.values()), None)
+
 
         if caption:
             srt_captions = caption.generate_srt_captions()
@@ -277,6 +284,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
