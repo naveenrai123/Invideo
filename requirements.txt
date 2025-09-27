@@ -12,3 +12,4 @@ langchain-google-genai==2.0.10
 pytube>=15.0.0
 openai>=1.29.0
 yt-dlp==2025.9.6
+requests==2.32.0
