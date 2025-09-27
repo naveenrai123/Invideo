@@ -101,7 +101,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
 
     # Proxy list
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values()) if "youtube_proxies" in st.secrets else [None]
-    languages = ["en", "hi"] if target_lang == "auto" else [target_lang]
+    
 
     # ---------- 1. YouTubeTranscriptApi with proxy rotation ----------
     for proxy_url in random.sample(proxy_list, len(proxy_list)):
@@ -113,16 +113,35 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
                 from youtube_transcript_api import _api
                 _api.requests = session  # patch requests
 
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+
+            # Case 1: target language auto → just grab English (base transcript)
+            if target_lang == "auto":
+                base = transcript_list.find_generated_transcript(['en'])
+                transcript = base.fetch()
+
+            # Case 2: explicit Hindi or other translation
+            elif target_lang == "hi":
+                base = transcript_list.find_generated_transcript(['en'])
+                transcript = base.translate('hi').fetch()
+
+            # Case 3: explicit English
+            elif target_lang == "en":
+                base = transcript_list.find_generated_transcript(['en'])
+                transcript = base.fetch()
+
+            # Fallback: try direct fetch in requested language
+            else:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[target_lang])
+
             if transcript:
                 transcript_text = " ".join([t["text"] for t in transcript if t["text"].strip()])
-                st.success("✅ Transcript fetched via YouTubeTranscriptApi")
+                st.success(f"✅ Transcript fetched in {target_lang}")
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"Transcript API failed with : {e}")
+            st.warning(f"Transcript API failed with: {e}")
             time.sleep(1)
-
     # ---------- 2. Whisper fallback ----------
     if use_whisper:
         try:
@@ -341,6 +360,7 @@ with tab1:
 
 
   
+
 
 
 
