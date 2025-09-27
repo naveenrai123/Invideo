@@ -87,27 +87,39 @@ def fetch_transcript(video_id, target_lang="auto"):
 
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
 
-    # ---------- Try YouTubeTranscriptApi ----------
-    for proxy_url in proxy_list + [None]:
+# ---------- Try YouTubeTranscriptApi ----------
+for proxy_url in proxy_list + [None]:
+    try:
+        if proxy_url:
+            from youtube_transcript_api._transcripts import Transcripts
+            session = requests.Session()
+            session.proxies.update({"http": proxy_url, "https": proxy_url})
+            transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
+            transcript = transcript_list.fetch()
+        else:
+            languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+
+        if transcript:
+            st.success("✅ Official transcript found")
+            return " ".join([t['text'] for t in transcript])
+
+    except (TranscriptsDisabled, NoTranscriptFound):
+        # 👇 Try auto-generated captions
         try:
-            if proxy_url:
-                from youtube_transcript_api._transcripts import Transcripts
-                session = requests.Session()
-                session.proxies.update({"http": proxy_url, "https": proxy_url})
-                transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
-                transcript = transcript_list.fetch()
-            else:
-                languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            auto_transcript = transcript_list.find_transcript(['en', 'hi'])
+            transcript = auto_transcript.fetch()
             if transcript:
+                st.warning("⚠️ Using auto-generated captions")
                 return " ".join([t['text'] for t in transcript])
+        except Exception:
+            continue
 
-        except (TranscriptsDisabled, NoTranscriptFound):
-            continue
-        except Exception as e:
-            print(f"Transcript API error: {e}")
-            continue
+    except Exception as e:
+        print(f"Transcript API error: {e}")
+        continue
+
 
     # ---------- Fallback: Pytube ----------
     try:
@@ -294,6 +306,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
