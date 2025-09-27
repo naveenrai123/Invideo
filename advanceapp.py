@@ -112,114 +112,44 @@ def fetch_transcript(video_id, target_lang="auto"):
     # ---------- Fallback: Pytube ----------
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+        player_response = yt.player_response
 
-        if not yt.captions:
-            print("No captions available in Pytube.")
+        caption_tracks = (
+            player_response.get("captions", {})
+            .get("playerCaptionsTracklistRenderer", {})
+            .get("captionTracks", [])
+        )
+
+        if not caption_tracks:
+            print("⚠️ No captions found in Pytube fallback.")
             return None
 
-        fallback_order = []
-        if target_lang == "auto":
-            fallback_order = ["en", "hi"]
-        else:
-            fallback_order = [target_lang, "en", "hi"]
-
-        caption = None
+        # Pick language
+        fallback_order = ["en", "hi"] if target_lang == "auto" else [target_lang, "en", "hi"]
+        selected_track = None
         for lang in fallback_order:
-            caption = yt.captions.get_by_language_code(lang)
-            if caption:
+            for track in caption_tracks:
+                if lang in track.get("languageCode", ""):
+                    selected_track = track
+                    break
+            if selected_track:
                 break
 
-        if not caption:
-            caption = next(iter(yt.captions.values()), None)
+        if not selected_track:
+            selected_track = caption_tracks[0]
 
-        if caption:
-            srt_captions = caption.generate_srt_captions()
-            cleaned_lines = []
-            for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):
-                    continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
-                    continue
-                if line.strip():
-                    cleaned_lines.append(line.strip())
-            return " ".join(cleaned_lines)
+        # Fetch caption XML
+        import requests, xml.etree.ElementTree as ET
+        caption_url = selected_track["baseUrl"]
+        resp = requests.get(caption_url)
+        root = ET.fromstring(resp.text)
+
+        lines = [n.text for n in root.findall(".//text") if n.text]
+        return " ".join(lines)
 
     except Exception as e:
-        print("Pytube failed:", e)
-
-    return None
-def fetch_transcript(video_id, target_lang="auto"):
-    """
-    Try YouTubeTranscriptApi first.
-    If fails, fall back to Pytube captions.
-    """
-    transcript = None
-
-    proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
-
-    # ---------- Try YouTubeTranscriptApi ----------
-    for proxy_url in proxy_list + [None]:
-        try:
-            if proxy_url:
-                from youtube_transcript_api._transcripts import Transcripts
-                session = requests.Session()
-                session.proxies.update({"http": proxy_url, "https": proxy_url})
-                transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
-                transcript = transcript_list.fetch()
-            else:
-                languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-
-            if transcript:
-                return " ".join([t['text'] for t in transcript])
-
-        except (TranscriptsDisabled, NoTranscriptFound):
-            continue
-        except Exception as e:
-            print(f"Transcript API error: {e}")
-            continue
-
-    # ---------- Fallback: Pytube ----------
-    try:
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-
-        if not yt.captions:
-            print("No captions available in Pytube.")
-            return None
-
-        fallback_order = []
-        if target_lang == "auto":
-            fallback_order = ["en", "hi"]
-        else:
-            fallback_order = [target_lang, "en", "hi"]
-
-        caption = None
-        for lang in fallback_order:
-            caption = yt.captions.get_by_language_code(lang)
-            if caption:
-                break
-
-        if not caption:
-            caption = next(iter(yt.captions.values()), None)
-
-        if caption:
-            srt_captions = caption.generate_srt_captions()
-            cleaned_lines = []
-            for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):
-                    continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
-                    continue
-                if line.strip():
-                    cleaned_lines.append(line.strip())
-            return " ".join(cleaned_lines)
-
-    except Exception as e:
-        print("Pytube failed:", e)
-
-    return None
-
-
+        print("❌ Pytube fallback failed:", e)
+        return None
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
         video_id = extract_video_id(url)
@@ -364,6 +294,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
