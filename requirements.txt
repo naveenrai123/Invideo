@@ -1,34 +1,16 @@
-# Streamlit core
 streamlit==1.37.1
-rich==14.1.0  # pinned to avoid uninstall/reinstall conflicts
-
-# Google API
+rich<14
 google-api-python-client==2.97.0
-
-# Data processing & ML
+joblib==1.4.2
 pandas==2.3.1
+matplotlib==3.9.2
 numpy==1.25.2
 scikit-learn==1.5.1
-joblib==1.4.2
-matplotlib==3.9.2
-
-# YouTube transcript & download
 youtube-transcript-api==1.1.1
-pytube>=15.0.0
-yt-dlp==2025.9.6
-
-# LangChain & Gemini API
 langchain==0.3.27
-langchain-community==0.3.29
+langchain-community==0.3.27
 langchain-google-genai==2.0.10
-
-# OpenAI Whisper
+pytube>=15.0.0
 openai>=1.29.0
-
-# HTTP requests / proxy support
+yt-dlp>=2024.12.30
 requests==2.32.0
-
-# Markdown & parsing (required by Streamlit)
-markdown-it-py==4.0.0
-mdurl==0.1.2
-pygments==2.19.2
