@@ -82,9 +82,9 @@ def fetch_transcript(video_id, target_lang="auto"):
     """
     Try YouTubeTranscriptApi first.
     If fails, fall back to Pytube captions.
-    Shows Streamlit messages for official/auto-generated transcripts.
     """
     transcript = None
+
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
 
     # ---------- Try YouTubeTranscriptApi ----------
@@ -101,21 +101,10 @@ def fetch_transcript(video_id, target_lang="auto"):
                 transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
 
             if transcript:
-                st.success("✅ Official transcript found")
                 return " ".join([t['text'] for t in transcript])
 
         except (TranscriptsDisabled, NoTranscriptFound):
-            # Try auto-generated captions
-            try:
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                auto_transcript = transcript_list.find_transcript(['en', 'hi'])
-                transcript = auto_transcript.fetch()
-                if transcript:
-                    st.warning("⚠️ Using auto-generated captions")
-                    return " ".join([t['text'] for t in transcript])
-            except Exception:
-                continue
-
+            continue
         except Exception as e:
             print(f"Transcript API error: {e}")
             continue
@@ -123,39 +112,113 @@ def fetch_transcript(video_id, target_lang="auto"):
     # ---------- Fallback: Pytube ----------
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-    
+
         if not yt.captions:
-            st.error("⚠️ No captions found in Pytube fallback.")
+            print("No captions available in Pytube.")
             return None
-    
-        # Pick language
-        fallback_order = ["en", "hi"] if target_lang == "auto" else [target_lang, "en", "hi"]
+
+        fallback_order = []
+        if target_lang == "auto":
+            fallback_order = ["en", "hi"]
+        else:
+            fallback_order = [target_lang, "en", "hi"]
+
         caption = None
         for lang in fallback_order:
             caption = yt.captions.get_by_language_code(lang)
             if caption:
                 break
-    
-        # If still no match, pick the first available caption
+
         if not caption:
             caption = next(iter(yt.captions.values()), None)
-    
+
         if caption:
             srt_captions = caption.generate_srt_captions()
             cleaned_lines = []
             for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):  # skip number lines
+                if re.match(r"^\d+$", line):
                     continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):  # skip timestamp lines
+                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
                     continue
                 if line.strip():
                     cleaned_lines.append(line.strip())
-            st.warning("⚠️ Using captions from Pytube")
             return " ".join(cleaned_lines)
-    
+
     except Exception as e:
-        st.error(f"❌ Pytube fallback failed: {e}")
-        return None
+        print("Pytube failed:", e)
+
+    return None
+def fetch_transcript(video_id, target_lang="auto"):
+    """
+    Try YouTubeTranscriptApi first.
+    If fails, fall back to Pytube captions.
+    """
+    transcript = None
+
+    proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
+
+    # ---------- Try YouTubeTranscriptApi ----------
+    for proxy_url in proxy_list + [None]:
+        try:
+            if proxy_url:
+                from youtube_transcript_api._transcripts import Transcripts
+                session = requests.Session()
+                session.proxies.update({"http": proxy_url, "https": proxy_url})
+                transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
+                transcript = transcript_list.fetch()
+            else:
+                languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+
+            if transcript:
+                return " ".join([t['text'] for t in transcript])
+
+        except (TranscriptsDisabled, NoTranscriptFound):
+            continue
+        except Exception as e:
+            print(f"Transcript API error: {e}")
+            continue
+
+    # ---------- Fallback: Pytube ----------
+    try:
+        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+
+        if not yt.captions:
+            print("No captions available in Pytube.")
+            return None
+
+        fallback_order = []
+        if target_lang == "auto":
+            fallback_order = ["en", "hi"]
+        else:
+            fallback_order = [target_lang, "en", "hi"]
+
+        caption = None
+        for lang in fallback_order:
+            caption = yt.captions.get_by_language_code(lang)
+            if caption:
+                break
+
+        if not caption:
+            caption = next(iter(yt.captions.values()), None)
+
+        if caption:
+            srt_captions = caption.generate_srt_captions()
+            cleaned_lines = []
+            for line in srt_captions.split("\n"):
+                if re.match(r"^\d+$", line):
+                    continue
+                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
+                    continue
+                if line.strip():
+                    cleaned_lines.append(line.strip())
+            return " ".join(cleaned_lines)
+
+    except Exception as e:
+        print("Pytube failed:", e)
+
+    return None
+
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
@@ -287,7 +350,7 @@ with tab1:
         else:
             with st.spinner("Generating summary..."):
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash-latest",
+                    model="gemini-1.5-flash",
                     google_api_key=st.secrets["google"]["api_key"],
                     temperature=0
                 )
@@ -306,11 +369,4 @@ with tab1:
 
 
 
-
-
-
-
-
-
-
-
+  why it is not using pytube
