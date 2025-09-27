@@ -119,7 +119,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"YouTubeTranscriptApi failed with proxy {proxy_url}: {e}")
+            st.warning(f"YouTubeTranscriptApi failed with proxy: {e}")
 
     # ---------- 2. Whisper fallback ----------
     if use_whisper:
@@ -297,6 +297,7 @@ with tab1:
 
 
   
+
 
 
 
