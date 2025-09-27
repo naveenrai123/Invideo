@@ -121,7 +121,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"YouTubeTranscriptApi failed with proxy {proxy_url}: {e}")
+            st.warning(f"YouTubeTranscriptApi failed with proxy : {e}")
 
     # ---------- 2. Pytube captions ----------
     for proxy_url in proxy_list:
@@ -157,7 +157,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
                     return transcript_text
 
         except Exception as e:
-            st.warning(f"Pytube captions failed with proxy {proxy_url}: {e}")
+            st.warning(f"Pytube captions failed with proxy : {e}")
 
     # ---------- 3. Whisper fallback ----------
     if use_whisper:
@@ -166,9 +166,9 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 audio_file = os.path.join(tmp_dir, "video_audio.mp4")
                 yt.streams.filter(only_audio=True).first().download(output_path=tmp_dir, filename="video_audio.mp4")
-                transcript = openai.Audio.transcriptions.create(
-                    model="whisper-1",
-                    file=open(audio_file)
+                transcript = openai.audio.transcriptions.create(
+                model="whisper-1",
+                file=open(audio_file, "rb")
                 )
                 transcript_text = transcript["text"]
                 st.success("✅ Transcript generated via Whisper")
@@ -331,6 +331,7 @@ with tab1:
 
 
   
+
 
 
 
