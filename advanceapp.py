@@ -280,7 +280,7 @@ with tab1:
         else:
             with st.spinner("Generating summary..."):
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",
+                    model="models/gemini-1.5-flash-latest",
                     google_api_key=st.secrets["google"]["api_key"],
                     temperature=0
                 )
@@ -294,6 +294,7 @@ with tab1:
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
+
 
 
 
