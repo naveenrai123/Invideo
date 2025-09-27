@@ -78,15 +78,17 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.write(feature_names[top_neg])
 
 # ------------------- YouTube Summarizer ------------------- #
+
 def fetch_transcript(video_id, target_lang="auto"):
     """
-    Try YouTubeTranscriptApi first.
-    If fails, fall back to Pytube captions.
+    Fetch YouTube transcript.
+    1️⃣ Try YouTubeTranscriptApi with optional proxies.
+    2️⃣ If it fails, fallback to Pytube using updated player_response captions with proxies.
     """
-    transcript = None
+    import requests, xml.etree.ElementTree as ET
 
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
-
+    
     # ---------- Try YouTubeTranscriptApi ----------
     for proxy_url in proxy_list + [None]:
         try:
@@ -102,7 +104,6 @@ def fetch_transcript(video_id, target_lang="auto"):
 
             if transcript:
                 return " ".join([t['text'] for t in transcript])
-
         except (TranscriptsDisabled, NoTranscriptFound):
             continue
         except Exception as e:
@@ -110,114 +111,50 @@ def fetch_transcript(video_id, target_lang="auto"):
             continue
 
     # ---------- Fallback: Pytube ----------
-    try:
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-
-        if not yt.captions:
-            print("No captions available in Pytube.")
-            return None
-
-        fallback_order = []
-        if target_lang == "auto":
-            fallback_order = ["en", "hi"]
-        else:
-            fallback_order = [target_lang, "en", "hi"]
-
-        caption = None
-        for lang in fallback_order:
-            caption = yt.captions.get_by_language_code(lang)
-            if caption:
-                break
-
-        if not caption:
-            caption = next(iter(yt.captions.values()), None)
-
-        if caption:
-            srt_captions = caption.generate_srt_captions()
-            cleaned_lines = []
-            for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):
-                    continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
-                    continue
-                if line.strip():
-                    cleaned_lines.append(line.strip())
-            return " ".join(cleaned_lines)
-
-    except Exception as e:
-        print("Pytube failed:", e)
-
-    return None
-def fetch_transcript(video_id, target_lang="auto"):
-    """
-    Try YouTubeTranscriptApi first.
-    If fails, fall back to Pytube captions.
-    """
-    transcript = None
-
-    proxy_list = list(st.secrets.get("youtube_proxies", {}).values())
-
-    # ---------- Try YouTubeTranscriptApi ----------
     for proxy_url in proxy_list + [None]:
         try:
+            session = None
             if proxy_url:
-                from youtube_transcript_api._transcripts import Transcripts
                 session = requests.Session()
                 session.proxies.update({"http": proxy_url, "https": proxy_url})
-                transcript_list = Transcripts(video_id, session=session).find_transcript(['en', 'hi'])
-                transcript = transcript_list.fetch()
-            else:
-                languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
 
-            if transcript:
-                return " ".join([t['text'] for t in transcript])
+            yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
 
-        except (TranscriptsDisabled, NoTranscriptFound):
-            continue
+            caption_tracks = (
+                yt.player_response.get("captions", {})
+                .get("playerCaptionsTracklistRenderer", {})
+                .get("captionTracks", [])
+            )
+
+            if not caption_tracks:
+                print("⚠️ No captions found in Pytube fallback.")
+                continue
+
+            fallback_order = ["en", "hi"] if target_lang == "auto" else [target_lang, "en", "hi"]
+            selected_track = None
+            for lang in fallback_order:
+                for track in caption_tracks:
+                    if lang in track.get("languageCode", ""):
+                        selected_track = track
+                        break
+                if selected_track:
+                    break
+            if not selected_track:
+                selected_track = caption_tracks[0]
+
+            # Fetch and parse XML captions
+            resp = requests.get(selected_track["baseUrl"], proxies={"http": proxy_url, "https": proxy_url} if proxy_url else None)
+            root = ET.fromstring(resp.text)
+            lines = [n.text for n in root.findall(".//text") if n.text]
+            if lines:
+                return " ".join(lines)
+
         except Exception as e:
-            print(f"Transcript API error: {e}")
+            print("❌ Pytube fallback failed:", e)
             continue
-
-    # ---------- Fallback: Pytube ----------
-    try:
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-
-        if not yt.captions:
-            print("No captions available in Pytube.")
-            return None
-
-        fallback_order = []
-        if target_lang == "auto":
-            fallback_order = ["en", "hi"]
-        else:
-            fallback_order = [target_lang, "en", "hi"]
-
-        caption = None
-        for lang in fallback_order:
-            caption = yt.captions.get_by_language_code(lang)
-            if caption:
-                break
-
-        if not caption:
-            caption = next(iter(yt.captions.values()), None)
-
-        if caption:
-            srt_captions = caption.generate_srt_captions()
-            cleaned_lines = []
-            for line in srt_captions.split("\n"):
-                if re.match(r"^\d+$", line):
-                    continue
-                if re.match(r"^\d{2}:\d{2}:\d{2},\d{3}", line):
-                    continue
-                if line.strip():
-                    cleaned_lines.append(line.strip())
-            return " ".join(cleaned_lines)
-
-    except Exception as e:
-        print("Pytube failed:", e)
 
     return None
+
 
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
@@ -370,4 +307,5 @@ with tab1:
 
 
   
+
 
