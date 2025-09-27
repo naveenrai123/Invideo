@@ -82,27 +82,29 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.markdown("**Top Negative Words**")
         st.write(feature_names[top_neg])
 
-# Set your OpenAI Whisper API key
+
+# Set OpenAI key
 openai.api_key = st.secrets["openai"]["api_key"]
 
-# ------------------ Fetch Transcript ------------------ #
 def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
     """
-    Fetch transcript:
+    Fetch transcript from YouTube:
     1. YouTubeTranscriptApi
     2. Pytube captions
     3. Whisper fallback (audio transcription)
     """
-    # ---------- YouTubeTranscriptApi ----------
+    # --------- 1. YouTubeTranscriptApi ----------
     try:
         languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
         if transcript:
             return " ".join([t['text'] for t in transcript])
+    except (TranscriptsDisabled, NoTranscriptFound):
+        print("YouTubeTranscriptApi: No captions found")
     except Exception as e:
         print(f"YouTubeTranscriptApi failed: {e}")
 
-    # ---------- Pytube fallback ----------
+    # --------- 2. Pytube captions ----------
     try:
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
         caption_tracks = (
@@ -132,12 +134,18 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
     except Exception as e:
         print(f"Pytube fallback failed: {e}")
 
-    # ---------- Whisper fallback ----------
+    # --------- 3. Whisper fallback ----------
     if use_whisper:
         try:
+            if 'yt' not in locals():
+                yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+
             with tempfile.TemporaryDirectory() as tmp_dir:
                 audio_file = os.path.join(tmp_dir, "video_audio.mp4")
+                # Download only audio
                 yt.streams.filter(only_audio=True).first().download(output_path=tmp_dir, filename="video_audio.mp4")
+
+                # Transcribe with OpenAI Whisper
                 transcript = openai.Audio.transcriptions.create(
                     model="whisper-1",
                     file=open(audio_file)
@@ -147,6 +155,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
             print(f"Whisper transcription failed: {e}")
 
     return None
+
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
@@ -298,6 +307,7 @@ with tab1:
 
 
   
+
 
 
 
