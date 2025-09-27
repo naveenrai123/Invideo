@@ -103,7 +103,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
     # ---------- 1. YouTubeTranscriptApi ----------
     for proxy_url in proxy_list:
         try:
-            st.write(f"Trying YouTubeTranscriptApi with proxy: {proxy_url}")
+            st.write(f"Trying YouTubeTranscriptApi with proxy")
             languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
 
             if proxy_url:
@@ -121,12 +121,12 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"YouTubeTranscriptApi failed with proxy {proxy_url}: {e}")
+            st.warning(f"YouTubeTranscriptApi failed with proxy: {e}")
 
     # ---------- 2. Pytube captions ----------
     for proxy_url in proxy_list:
         try:
-            st.write(f"Trying Pytube captions with proxy: {proxy_url}")
+            st.write(f"Trying Pytube captions with proxy")
             proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
             yt = YouTube(f"https://www.youtube.com/watch?v={video_id}", proxies=proxies)
             
@@ -158,7 +158,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
                     return transcript_text
 
         except Exception as e:
-            st.warning(f"Pytube captions failed with proxy {proxy_url}: {e}")
+            st.warning(f"Pytube captions failed with proxy : {e}")
 
     # ---------- 3. Whisper fallback ----------
     if use_whisper:
@@ -332,6 +332,7 @@ with tab1:
 
 
   
+
 
 
 
