@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 import tempfile
 import openai
 import os
-
+import time
+import subprocess
 # ------------------- Load custom model and vectorizer ------------------- #
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
@@ -86,64 +87,107 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
 # Set OpenAI key
 openai.api_key = st.secrets["openai"]["api_key"]
 
-def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
+
+def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=True):
     """
     Fetch transcript in this order:
-    1. YouTubeTranscriptApi (with proxy support via requests patching)
+    1. YouTubeTranscriptApi (with proxy rotation)
     2. Whisper fallback (audio transcription)
+    3. yt-dlp auto-subtitles fallback (if installed)
+    Returns transcript text or None.
     """
     st.write("⏳ Fetching transcript...")
     transcript_text = None
 
-    # Load proxy list from secrets
+    # Proxy list
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values()) if "youtube_proxies" in st.secrets else [None]
     languages = ["en", "hi"] if target_lang == "auto" else [target_lang]
 
-    # ---------- 1. YouTubeTranscriptApi ----------
-    for proxy_url in proxy_list:
+    # ---------- 1. YouTubeTranscriptApi with proxy rotation ----------
+    for proxy_url in random.sample(proxy_list, len(proxy_list)):
         try:
-            st.write(f"Trying YouTubeTranscriptApi with proxy")
-
+            st.write(f"Trying YouTubeTranscriptApi with proxy: {proxy_url}")
             if proxy_url:
                 session = requests.Session()
                 session.proxies.update({"http": proxy_url, "https": proxy_url})
-
-                from youtube_transcript_api import YouTubeTranscriptApi, _api
-                _api.requests = session  # 🔥 monkeypatch to force proxy
+                from youtube_transcript_api import _api
+                _api.requests = session  # patch requests
 
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-
             if transcript:
                 transcript_text = " ".join([t["text"] for t in transcript if t["text"].strip()])
                 st.success("✅ Transcript fetched via YouTubeTranscriptApi")
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"YouTubeTranscriptApi failed with proxy: {e}")
+            st.warning(f"Transcript API failed with {proxy_url}: {e}")
+            time.sleep(1)
 
     # ---------- 2. Whisper fallback ----------
     if use_whisper:
         try:
             st.write("🎤 Trying Whisper transcription (audio fallback)...")
             with tempfile.TemporaryDirectory() as tmp_dir:
-                yt = YouTube(f"https://www.youtube.com/watch?v={video_id}", proxies={"http": proxy_list[0], "https": proxy_list[0]})
+                yt = YouTube(f"https://www.youtube.com/watch?v={video_id}",
+                             proxies={"http": proxy_list[0], "https": proxy_list[0]} if proxy_list[0] else None)
                 audio_file = yt.streams.filter(only_audio=True).first().download(
                     output_path=tmp_dir, filename="video_audio.mp4"
                 )
 
-                with open(audio_file, "rb") as f:
-                    transcript = openai.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=f
-                    )
-                transcript_text = transcript["text"]
-                st.success("✅ Transcript generated via Whisper")
-                return transcript_text
+                # Retry on rate limit
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        with open(audio_file, "rb") as f:
+                            transcript = openai.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=f
+                            )
+                        transcript_text = transcript["text"]
+                        st.success("✅ Transcript generated via Whisper")
+                        return transcript_text
+                    except openai.error.RateLimitError:
+                        wait = 2 ** attempt
+                        st.warning(f"Rate limited by Whisper, retrying in {wait}s...")
+                        time.sleep(wait)
         except Exception as e:
             st.error(f"Whisper transcription failed: {e}")
 
+    # ---------- 3. yt-dlp fallback ----------
+    if use_ytdlp:
+        try:
+            st.write("📝 Trying yt-dlp auto-captions fallback...")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                output_path = os.path.join(tmp_dir, "subs")
+                cmd = [
+                    "yt-dlp",
+                    "--skip-download",
+                    "--write-auto-subs",
+                    "--sub-lang", "en",
+                    "-o", output_path,
+                    f"https://www.youtube.com/watch?v={video_id}"
+                ]
+                subprocess.run(cmd, capture_output=True)
+                
+                # Look for downloaded .vtt file
+                for f in os.listdir(tmp_dir):
+                    if f.endswith(".vtt"):
+                        vtt_file = os.path.join(tmp_dir, f)
+                        lines = []
+                        with open(vtt_file, "r", encoding="utf-8") as vf:
+                            for line in vf:
+                                if line.strip() and not line[0].isdigit() and "-->" not in line:
+                                    lines.append(line.strip())
+                        if lines:
+                            transcript_text = " ".join(lines)
+                            st.success("✅ Transcript fetched via yt-dlp auto-captions")
+                            return transcript_text
+        except Exception as e:
+            st.warning(f"yt-dlp fallback failed: {e}")
+
     st.error("❌ Could not retrieve transcript by any method.")
     return None
+
 
 
 
@@ -297,6 +341,7 @@ with tab1:
 
 
   
+
 
 
 
