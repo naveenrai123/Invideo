@@ -120,7 +120,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"Transcript API failed with {: {e}")
+            st.warning(f"Transcript API failed with : {e}")
             time.sleep(1)
 
     # ---------- 2. Whisper fallback ----------
@@ -341,6 +341,7 @@ with tab1:
 
 
   
+
 
 
 
