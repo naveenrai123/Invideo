@@ -87,38 +87,86 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
 openai.api_key = st.secrets["openai"]["api_key"]
 
 def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
+    """
+    Fetch transcript in this order:
+    1. YouTubeTranscriptApi (with proxy support)
+    2. Pytube captions (with proxy support)
+    3. Whisper fallback (audio transcription)
+    Returns transcript text or None.
+    """
     st.write("⏳ Fetching transcript...")
     transcript_text = None
 
+    # Load proxies from Streamlit secrets
+    proxy_list = list(st.secrets.get("youtube_proxies", {}).values()) if "youtube_proxies" in st.secrets else [None]
+
     # ---------- 1. YouTubeTranscriptApi ----------
-    try:
-        languages = ['en','hi'] if target_lang=="auto" else [target_lang]
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-        transcript_text = " ".join([t['text'] for t in transcript])
-        st.success("✅ Transcript fetched via YouTubeTranscriptApi")
-        return transcript_text
-    except Exception as e:
-        st.warning(f"YouTubeTranscriptApi failed: {e}")
+    for proxy_url in proxy_list:
+        try:
+            st.write(f"Trying YouTubeTranscriptApi with proxy: {proxy_url}")
+            languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
+
+            if proxy_url:
+                import youtube_transcript_api._transcripts as transcripts_api
+                session = requests.Session()
+                session.proxies.update({"http": proxy_url, "https": proxy_url})
+                transcript_list = transcripts_api.YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+                transcript = transcript_list
+            else:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+
+            if transcript:
+                transcript_text = " ".join([t['text'] for t in transcript])
+                st.success("✅ Transcript fetched via YouTubeTranscriptApi")
+                return transcript_text
+
+        except Exception as e:
+            st.warning(f"YouTubeTranscriptApi failed with proxy {proxy_url}: {e}")
 
     # ---------- 2. Pytube captions ----------
-    try:
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        captions = yt.captions
-        if captions:
-            caption = captions.get_by_language_code("en") or list(captions.values())[0]
-            transcript_text = caption.generate_srt_captions()
-            st.success("✅ Transcript fetched via Pytube captions")
-            return transcript_text
-    except Exception as e:
-        st.warning(f"Pytube captions failed: {e}")
+    for proxy_url in proxy_list:
+        try:
+            st.write(f"Trying Pytube captions with proxy: {proxy_url}")
+            proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+            yt = YouTube(f"https://www.youtube.com/watch?v={video_id}", proxies=proxies)
+            
+            caption_tracks = (
+                yt.player_response.get("captions", {})
+                .get("playerCaptionsTracklistRenderer", {})
+                .get("captionTracks", [])
+            )
+            if caption_tracks:
+                fallback_order = ["en", "hi"] if target_lang == "auto" else [target_lang, "en", "hi"]
+                selected_track = None
+                for lang in fallback_order:
+                    for track in caption_tracks:
+                        if lang in track.get("languageCode", ""):
+                            selected_track = track
+                            break
+                    if selected_track:
+                        break
+                if not selected_track:
+                    selected_track = caption_tracks[0]
+
+                resp = requests.get(selected_track["baseUrl"], proxies=proxies)
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                lines = [n.text for n in root.findall(".//text") if n.text]
+                if lines:
+                    transcript_text = " ".join(lines)
+                    st.success("✅ Transcript fetched via Pytube captions")
+                    return transcript_text
+
+        except Exception as e:
+            st.warning(f"Pytube captions failed with proxy {proxy_url}: {e}")
 
     # ---------- 3. Whisper fallback ----------
     if use_whisper:
         try:
-            st.write("Trying Whisper transcription...")
+            st.write("Trying Whisper transcription (audio fallback)...")
             with tempfile.TemporaryDirectory() as tmp_dir:
                 yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-                audio_file = yt.streams.filter(only_audio=True).first().download(output_path=tmp_dir, filename="audio.mp3")
+                audio_file = yt.streams.filter(only_audio=True).first().download(output_path=tmp_dir, filename="video_audio.mp4")
                 transcript = openai.audio.transcriptions.create(
                     model="whisper-1",
                     file=open(audio_file, "rb")
@@ -284,6 +332,7 @@ with tab1:
 
 
   
+
 
 
 
