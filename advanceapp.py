@@ -106,7 +106,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
     # ---------- 1. YouTubeTranscriptApi with proxy rotation ----------
     for proxy_url in random.sample(proxy_list, len(proxy_list)):
         try:
-            st.write(f"Trying YouTubeTranscriptApi with proxy: {proxy_url}")
+            st.write(f"Trying YouTubeTranscriptApi with proxy")
             if proxy_url:
                 session = requests.Session()
                 session.proxies.update({"http": proxy_url, "https": proxy_url})
@@ -120,7 +120,7 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
                 return transcript_text
 
         except Exception as e:
-            st.warning(f"Transcript API failed with {proxy_url}: {e}")
+            st.warning(f"Transcript API failed with {: {e}")
             time.sleep(1)
 
     # ---------- 2. Whisper fallback ----------
@@ -341,6 +341,7 @@ with tab1:
 
 
   
+
 
 
 
