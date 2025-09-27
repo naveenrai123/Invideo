@@ -278,7 +278,7 @@ with tab1:
         else:
             with st.spinner("Generating summary..."):
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",
+                    model="gemini-2.5-flash",
                     google_api_key=st.secrets["google"]["api_key"],
                     temperature=0
                 )
@@ -298,6 +298,7 @@ with tab1:
 
 
   
+
 
 
 
