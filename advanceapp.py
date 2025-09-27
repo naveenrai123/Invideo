@@ -107,10 +107,10 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True):
             languages = ['en', 'hi'] if target_lang == "auto" else [target_lang]
 
             if proxy_url:
-                import youtube_transcript_api._transcripts as transcripts_api
+            
                 session = requests.Session()
                 session.proxies.update({"http": proxy_url, "https": proxy_url})
-                transcript_list = transcripts_api.YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
                 transcript = transcript_list
             else:
                 transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
@@ -332,6 +332,7 @@ with tab1:
 
 
   
+
 
 
 
