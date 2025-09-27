@@ -10,4 +10,5 @@ langchain==0.3.27
 langchain-community==0.3.29
 langchain-google-genai==2.0.10
 pytube>=15.0.0
+openai>=1.29.0
 
