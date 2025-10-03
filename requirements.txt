@@ -14,3 +14,4 @@ pytube>=15.0.0
 openai>=1.29.0
 yt-dlp>=2024.12.30
 requests==2.32.0
+pydub==0.25.1
