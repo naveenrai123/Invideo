@@ -5,10 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import re
 import numpy as np
-from collections import Counter
 import random
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
-from pytube import YouTube   # Added for fallback
+from youtube_transcript_api import YouTubeTranscriptApi
+from pytube import YouTube
 
 # LangChain imports
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -17,13 +16,16 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.docstore.document import Document
 import requests
+
 # Additional imports for Whisper fallback
-import xml.etree.ElementTree as ET
 import tempfile
 import openai
 import os
 import time
 import subprocess
+from pydub import AudioSegment
+import math
+
 # ------------------- Load custom model and vectorizer ------------------- #
 model = joblib.load("sentiment_model.pkl")
 vectorizer = joblib.load("tfidf_vectorizer.pkl")
@@ -83,63 +85,42 @@ def plot_top_tfidf_words(vectorizer, model, top_n=20):
         st.markdown("**Top Negative Words**")
         st.write(feature_names[top_neg])
 
-
 # Set OpenAI key
 openai.api_key = st.secrets["openai"]["api_key"]
 
-
 def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=True):
-    """
-    Fetch transcript in this order:
-    1. YouTubeTranscriptApi (with proxy rotation)
-    2. Whisper fallback (audio transcription)
-    3. yt-dlp auto-subtitles fallback (if installed)
-    Returns transcript text or None.
-    """
-    st.write("⏳ Fetching transcript...")
     transcript_text = None
-
-    # Proxy list
     proxy_list = list(st.secrets.get("youtube_proxies", {}).values()) if "youtube_proxies" in st.secrets else [None]
-    
 
-    # ---------- 1. YouTubeTranscriptApi with proxy rotation ----------
+    # ---------- 1. YouTubeTranscriptApi ----------
     for proxy_url in random.sample(proxy_list, len(proxy_list)):
         try:
             if proxy_url:
                 session = requests.Session()
                 session.proxies.update({"http": proxy_url, "https": proxy_url})
                 from youtube_transcript_api import _api
-                _api.requests = session  # patch requests
+                _api.requests = session
 
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
 
-            # Case 1: target language auto → just grab English (base transcript)
             if target_lang == "auto":
                 base = transcript_list.find_generated_transcript(['en'])
                 transcript = base.fetch()
-
-            # Case 2: explicit Hindi or other translation
             elif target_lang == "hi":
                 base = transcript_list.find_generated_transcript(['en'])
                 transcript = base.translate('hi').fetch()
-
-            # Case 3: explicit English
             elif target_lang == "en":
                 base = transcript_list.find_generated_transcript(['en'])
                 transcript = base.fetch()
-
-            # Fallback: try direct fetch in requested language
             else:
                 transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[target_lang])
 
             if transcript:
                 transcript_text = " ".join([t["text"] for t in transcript if t["text"].strip()])
-                st.success(f"✅ Transcript fetched in {target_lang}")
                 return transcript_text
-
-        except Exception as e:
+        except Exception:
             time.sleep(1)
+
     # ---------- 2. Whisper fallback ----------
     if use_whisper:
         try:
@@ -150,41 +131,54 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
                     output_path=tmp_dir, filename="video_audio.mp4"
                 )
 
-                # Retry on rate limit
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        with open(audio_file, "rb") as f:
-                            transcript = openai.audio.transcriptions.create(
-                                model="whisper-1",
-                                file=f
-                            )
-                        transcript_text = transcript["text"]
-                        st.success("✅ Transcript generated via Whisper")
-                        return transcript_text
-                    except openai.error.RateLimitError:
-                        wait = 2 ** attempt
-                        st.warning(f"Rate limited by Whisper, retrying in {wait}s...")
-                        time.sleep(wait)
+                audio = AudioSegment.from_file(audio_file)
+                chunk_length_ms = 10 * 60 * 1000  # 10 minutes
+                transcript_chunks = []
+
+                for i, start_ms in enumerate(range(0, len(audio), chunk_length_ms)):
+                    end_ms = min(start_ms + chunk_length_ms, len(audio))
+                    chunk_audio = audio[start_ms:end_ms]
+                    chunk_path = os.path.join(tmp_dir, f"chunk_{i}.mp3")
+                    chunk_audio.export(chunk_path, format="mp3")
+                
+                    # Retry Whisper transcription
+                    for attempt in range(5):
+                        try:
+                            with open(chunk_path, "rb") as f:
+                                chunk_transcript = openai.audio.transcriptions.create(
+                                    model="whisper-1",
+                                    file=f
+                                )
+                            transcript_chunks.append(chunk_transcript["text"])
+                            break
+                        except (openai.error.RateLimitError, openai.error.APIError):
+                            wait = (2 ** attempt) + random.random()
+                            time.sleep(wait)
+                        except Exception as e:
+                            st.warning(f"Whisper chunk {i} failed: {e}")
+                            break
+
+                if transcript_chunks:
+                    transcript_text = " ".join(transcript_chunks)
+                    return transcript_text
         except Exception as e:
-            st.error(f"Whisper transcription failed: {e}")
+            st.warning(f"Whisper transcription failed: {e}")
 
     # ---------- 3. yt-dlp fallback ----------
     if use_ytdlp:
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
-                output_path = os.path.join(tmp_dir, "subs")
+                output_template = os.path.join(tmp_dir, "%(id)s.%(ext)s")
                 cmd = [
                     "yt-dlp",
                     "--skip-download",
                     "--write-auto-subs",
                     "--sub-lang", "en",
-                    "-o", output_path,
+                    "-o", output_template,
                     f"https://www.youtube.com/watch?v={video_id}"
                 ]
                 subprocess.run(cmd, capture_output=True)
-                
-                # Look for downloaded .vtt file
+
                 for f in os.listdir(tmp_dir):
                     if f.endswith(".vtt"):
                         vtt_file = os.path.join(tmp_dir, f)
@@ -195,16 +189,11 @@ def fetch_transcript(video_id, target_lang="auto", use_whisper=True, use_ytdlp=T
                                     lines.append(line.strip())
                         if lines:
                             transcript_text = " ".join(lines)
-                            st.success("✅ Transcript fetched via yt-dlp auto-captions")
                             return transcript_text
         except Exception as e:
             st.warning(f"yt-dlp fallback failed: {e}")
 
-    st.error("❌ Could not retrieve transcript by any method.")
     return None
-
-
-
 
 def summarize_youtube_video(url, llm, target_lang="auto"):
     try:
@@ -213,11 +202,9 @@ def summarize_youtube_video(url, llm, target_lang="auto"):
             return " Could not extract a valid video ID."
 
         text = fetch_transcript(video_id, target_lang)
-
         if not text:
             return " Could not retrieve a transcript or captions."
 
-        # LangChain summarization
         docs = [Document(page_content=text)]
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         split_docs = text_splitter.split_documents(docs)
@@ -250,7 +237,6 @@ Summary:""",
 # ------------------- Streamlit App ------------------- #
 st.title("🎬 INVIDEO Analyzer")
 
-# Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 YouTube Video Summarizer",
     "📺 YouTube Sentiment Analysis",
@@ -259,14 +245,14 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📂 Bulk Review Upload",
 ])
 
-# ------------------- Tab 1: YouTube Comments Analysis ------------------- #
+# ------------------- Tab 2: Comments Analysis ------------------- #
 with tab2:
     st.subheader("📺 Analyze YouTube Video Comments")
-    video_url = st.text_input("Enter YouTube Video URL:")
+    video_url = st.text_input("Enter YouTube Video URL:", key="comments_url")
     max_results = st.slider("Number of Comments", 50, 250, 100)
     api_key = st.secrets["youtube"]["api_key"]
 
-    if st.button("Analyze Comments"):
+    if st.button("Analyze Comments", key="analyze_comments"):
         if not api_key or not video_url:
             st.error("Please provide both API key and video URL.")
         else:
@@ -287,10 +273,10 @@ with tab2:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# ------------------- Tab 2: Custom Review ------------------- #
+# ------------------- Tab 3: Custom Review ------------------- #
 with tab3:
     st.subheader("🧪 Try Your Own Review (IMDb-style)")
-    user_review = st.text_area("Enter a movie review:")
+    user_review = st.text_area("Enter a movie review:", key="custom_review")
     if user_review:
         cleaned = clean_text(user_review)
         vec = vectorizer.transform([cleaned])
@@ -299,15 +285,15 @@ with tab3:
         st.info(f"Prediction: {'Positive' if pred == 1 else 'Negative'}")
         st.markdown(f"Confidence: `{max(proba):.2f}`")
 
-# ------------------- Tab 3: Word Importance ------------------- #
+# ------------------- Tab 4: Word Importance ------------------- #
 with tab4:
     st.subheader("📊 Top Influential Words from IMDb Model")
     plot_top_tfidf_words(vectorizer, model, top_n=20)
 
-# ------------------- Tab 4: Bulk Review Upload ------------------- #
+# ------------------- Tab 5: Bulk Review Upload ------------------- #
 with tab5:
     st.subheader("📂 Upload a CSV of Reviews")
-    uploaded_file = st.file_uploader("Upload CSV with column `review`", type="csv")
+    uploaded_file = st.file_uploader("Upload CSV with column `review`", type="csv", key="bulk_upload")
     if uploaded_file:
         df_upload = pd.read_csv(uploaded_file)
         if "review" in df_upload.columns:
@@ -319,18 +305,18 @@ with tab5:
         else:
             st.error("CSV must have a 'review' column.")
 
-# ------------------- Tab 5: YouTube Summarizer ------------------- #
+# ------------------- Tab 1: YouTube Summarizer ------------------- #
 with tab1:
     st.subheader("📝 Summarize YouTube Video")
-    video_url_sum = st.text_input("Enter YouTube Video URL for summarization:")
+    video_url_sum = st.text_input("Enter YouTube Video URL for summarization:", key="summarize_url")
     lang_choice = st.radio(
         "Select summary language:",
-        ["Auto ", "English", "Hindi"],
+        ["Auto", "English", "Hindi"],
         index=0,
         horizontal=True
     )
 
-    if st.button("Summarize Video"):
+    if st.button("Summarize Video", key="summarize_video"):
         if not video_url_sum:
             st.error("Please enter a valid YouTube URL")
         else:
@@ -340,37 +326,7 @@ with tab1:
                     google_api_key=st.secrets["google"]["api_key"],
                     temperature=0
                 )
-                if lang_choice == "English":
-                    lang_code = "en"
-                elif lang_choice == "Hindi":
-                    lang_code = "hi"
-                else:
-                    lang_code = "auto"
-
+                lang_code = "en" if lang_choice == "English" else "hi" if lang_choice == "Hindi" else "auto"
                 summary = summarize_youtube_video(video_url_sum, llm, target_lang=lang_code)
                 st.success("✅ Summary Generated!")
                 st.write(summary)
-
-
-
-
-
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
